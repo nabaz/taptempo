@@ -658,6 +658,11 @@ function finishGame() {
   el('playBtn').textContent = '▶ Play';
   el('autoBadge').style.display = 'none';
 
+  const btn = el('submitBtn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  const msg = el('submitMsg');
+  if (msg) msg.textContent = '';
+
   const rank = rankFor();
   const stars = starsFor(rank);
   el('finalRank').textContent = rank;
@@ -808,12 +813,26 @@ async function loadLeaderboard() {
   }
 }
 
+let lastSubmittedScoreKey = null;
+
 async function submitScore() {
   const name = el('scoreName').value.trim() || 'Anonymous';
   state.playerName = name;
   localStorage.setItem('mt-name', name);
   if (isImport()) {
     el('submitMsg').textContent = 'Imported play-along scores are kept locally only.';
+    return;
+  }
+  const btn = el('submitBtn');
+  // disable immediately so rapid double-clicks can't fire twice
+  if (btn) { btn.disabled = true; }
+  // guard against double-submitting the exact same game result
+  const key = JSON.stringify({
+    name, score: state.score, song: state.song.title,
+    diff: LEVELS[state.level], acc: Math.round(state.accuracy), combo: state.maxCombo,
+  });
+  if (key === lastSubmittedScoreKey) {
+    el('submitMsg').textContent = 'That score is already saved — play again for a new entry.';
     return;
   }
   try {
@@ -827,10 +846,13 @@ async function submitScore() {
       }),
     });
     const { rank } = await res.json();
+    lastSubmittedScoreKey = key;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saved ✓'; }
     el('submitMsg').textContent =
       rank <= 8 ? `Nice! You placed #${rank} on this song!` : `Score saved (ranks ~#${rank}).`;
     loadLeaderboard();
   } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     el('submitMsg').textContent = 'Could not reach server.';
   }
 }
