@@ -6,3 +6,7 @@ node_modules/
 
 # Runtime data
 leaderboard.json
+
+# Secrets
+.env
+.env.local

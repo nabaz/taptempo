@@ -446,6 +446,16 @@ window.addEventListener('keyup', (e) => {
   if (e.key in map) releaseCol(map[e.key]);
 });
 
+// ---- lock screen zoom (iOS pinch, Safari gestures, double-tap) ----
+// iOS Safari uses the older gesture* events for pinch; modern browsers fire
+// a multi-touch touchmove. Block both so the game surface never zooms, while
+// still allowing single-finger play taps and single-finger menu scrolling.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+document.addEventListener('touchmove', (e) => {
+  if (e.touches && e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
 // ---------- HUD ----------
 function updateHUD(force) {
   el('scoreDigits').textContent = String(state.score).padStart(4, '0');
@@ -651,7 +661,7 @@ function finishGame() {
   const rank = rankFor();
   const stars = starsFor(rank);
   el('finalRank').textContent = rank;
-  el('finalScore').textContent = state.score.toLocaleString();
+  el('finalScore').textContent = fmtScore(state.score);
   el('finalPerfect').textContent = state.perfect;
   el('finalGood').textContent = state.good;
   el('finalMiss').textContent = state.miss;
@@ -663,11 +673,11 @@ function finishGame() {
   const starBox = el('finalStars');
   if (starBox) starBox.innerHTML = starString(stars);
 
-  const { isNew, unlockedNext } = recordResult(state.song, state.level, state.score, state.accuracy, state.maxCombo, rank, stars);
+  const { isNew, unlockedNext, unlockedTitle } = recordResult(state.song, state.level, state.score, state.accuracy, state.maxCombo, rank, stars);
   el('newBest').hidden = !isNew;
   const pb = el('prevBest');
   const prevBest = getBestLevel(state.song, state.level);
-  if (prevBest) { pb.textContent = `Previous best (${LEVELS[state.level]}): ${prevBest.score.toLocaleString()} (${prevBest.acc.toFixed(0)}%)`; pb.hidden = false; }
+  if (prevBest) { pb.textContent = `Previous best (${LEVELS[state.level]}): ${fmtScore(prevBest.score)} (${prevBest.acc.toFixed(0)}%)`; pb.hidden = false; }
   else pb.hidden = true;
 
   // unlock toast
@@ -675,7 +685,9 @@ function finishGame() {
   if (unlockToast) {
     if (unlockedNext) {
       unlockToast.hidden = false;
-      unlockToast.textContent = '🎉 New song unlocked!';
+      unlockToast.textContent = unlockedTitle
+        ? `🎉 ${unlockedTitle} is now unlocked!`
+        : '🎉 New song unlocked!';
     } else {
       unlockToast.hidden = true;
     }
@@ -727,11 +739,12 @@ function bestStars(songId) {
 function recordResult(song, level, score, acc, combo, rank, stars) {
   const key = bestKey(song, level);
   const prev = getBestLevel(song, level);
-  const isNew = !prev || score > prev.score;
+  // a 0-point/blank run shouldn't count as a "new record" on a fresh song
+  const isNew = prev ? score > prev.score : score > 0;
   if (isNew) {
     localStorage.setItem(key, JSON.stringify({ score, acc, combo, rank, stars, level }));
   }
-  if (song.id === '__import__') return { isNew, unlockedNext: false };
+  if (song.id === '__import__') return { isNew, unlockedNext: false, unlockedTitle: null };
   // update progress: per-song best stars
   const p = readProgress();
   const prevStars = p.stars[song.id] || 0;
@@ -739,12 +752,14 @@ function recordResult(song, level, score, acc, combo, rank, stars) {
   // sequential unlock: earning >=1 star on this song unlocks the next one
   const idx = SONGS.findIndex((s) => s.id === song.id);
   let unlockedNext = false;
+  let unlockedTitle = null;
   if (stars >= 1 && idx + 1 < SONGS.length && !p.unlocked[idx + 1]) {
     p.unlocked[idx + 1] = true;
     unlockedNext = true;
+    unlockedTitle = SONGS[idx + 1].title;
   }
   writeProgress(p);
-  return { isNew, unlockedNext };
+  return { isNew, unlockedNext, unlockedTitle };
 }
 
 function starString(n) {
@@ -761,7 +776,7 @@ async function loadLeaderboard() {
     el('lbSong').textContent = '🎵 ' + song.title;
     const best = getBestLevel(song, state.level);
     el('songBest').textContent = best
-      ? `Local best (${LEVELS[state.level]}): ${best.score.toLocaleString()} (${best.acc.toFixed(0)}%)`
+      ? `Local best (${LEVELS[state.level]}): ${fmtScore(best.score)} (${best.acc.toFixed(0)}%)`
       : `No ${LEVELS[state.level]} local score yet.`;
     listEl.innerHTML = '<li class="lb-empty">Imported track — tap the TAP button to sync, scores saved locally.</li>';
     return;
@@ -775,7 +790,7 @@ async function loadLeaderboard() {
   }
   const best = getBestLevel(song, state.level);
   el('songBest').textContent = best
-    ? `Your best (${LEVELS[state.level]}): ${best.score.toLocaleString()} (${best.acc.toFixed(0)}%)`
+    ? `Your best (${LEVELS[state.level]}): ${fmtScore(best.score)} (${best.acc.toFixed(0)}%)`
     : `No ${LEVELS[state.level]} score yet — set a record!`;
   listEl.innerHTML = '<li class="lb-empty">Loading…</li>';
   try {
@@ -786,7 +801,7 @@ async function loadLeaderboard() {
       .sort((a, b) => b.score - a.score).slice(0, 8);
     if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">No scores yet — be the first!</li>'; return; }
     listEl.innerHTML = rows.map((s, i) =>
-      `<li><span class="lb-rank">${i + 1}</span><span class="lb-name">${escapeHtml(s.name)}</span><span class="lb-score">${s.score.toLocaleString()}</span></li>`
+      `<li><span class="lb-rank">${i + 1}</span><span class="lb-name">${escapeHtml(s.name)}</span><span class="lb-score">${fmtScore(s.score)}</span></li>`
     ).join('');
   } catch (e) {
     listEl.innerHTML = '<li class="lb-empty">Leaderboard unavailable</li>';
@@ -820,6 +835,12 @@ async function submitScore() {
   }
 }
 
+// locale-independent thousand separators (iPad Safari's toLocaleString can
+// return undefined because it doesn't load locale data synchronously)
+function fmtScore(n) {
+  const s = String(Math.round(Number(n) || 0));
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
