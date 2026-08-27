@@ -161,13 +161,14 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 
 // ---------- accent color ----------
+const LANE_KEYS = ['D', 'F', 'J', 'K'];
 function buildLanes() {
   const lanesEl = el('lanes');
   lanesEl.innerHTML = '';
   for (let c = 0; c < COLS; c++) {
     const key = document.createElement('div');
     key.className = 'lane-key';
-    key.textContent = c + 1;
+    key.textContent = LANE_KEYS[c];
     key.style.setProperty('--k', COLORS[c]);
     key.addEventListener('pointerdown', (e) => { e.preventDefault(); tap(c); });
     key.addEventListener('pointerup', () => releaseCol(c));
@@ -438,11 +439,11 @@ function releaseCol(col) {
 canvas.addEventListener('pointerdown', (e) => tap(inputToCol(e.clientX)));
 canvas.addEventListener('pointerup', (e) => releaseCol(inputToCol(e.clientX)));
 window.addEventListener('keydown', (e) => {
-  const map = { 1: 0, 2: 1, 3: 2, 4: 3 };
+  const map = { D: 0, F: 1, J: 2, K: 3 };
   if (e.key in map) tap(map[e.key]);
 });
 window.addEventListener('keyup', (e) => {
-  const map = { 1: 0, 2: 1, 3: 2, 4: 3 };
+  const map = { D: 0, F: 1, J: 2, K: 3 };
   if (e.key in map) releaseCol(map[e.key]);
 });
 
