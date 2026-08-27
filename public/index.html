@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TapTempo — Rhythm Arcade</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="grain"></div>
+  <div class="app">
+
+    <!-- topbar -->
+    <div class="topbar">
+      <div class="brand">TAP<span>TEMPO</span></div>
+      <div class="brand-sub">a rhythm arcade · friendly competition</div>
+      <div class="meta">DIFFICULTY <b id="diffNum">1</b> · <span id="bpmReadout">92 BPM</span></div>
+    </div>
+
+    <!-- cassette deck -->
+    <div class="deck" id="deck">
+      <button class="deck-arrow" id="prevSong" aria-label="Previous song">‹</button>
+      <div class="cassette">
+        <div class="reel"></div>
+        <div class="cassette-label">
+          <div class="song-name" id="songTitle">Midnight Groove</div>
+          <div class="song-genre" id="songGenre">Lo-fi · 92 BPM · Normal</div>
+          <div class="song-extra">
+            <span class="deck-stars" id="deckStars">☆☆☆</span>
+            <span class="lock-badge" id="lockBadge" hidden>🔒 Locked · earn 1★ (B+) on previous</span>
+          </div>
+        </div>
+        <div class="reel"></div>
+      </div>
+      <button class="deck-arrow" id="nextSong" aria-label="Next song">›</button>
+      <div class="deck-actions">
+        <button id="importBtn" class="icon-btn" title="Import your own track (play-along)">⤓</button>
+        <button id="muteBtn" class="icon-btn" title="Mute">🔊</button>
+        <input id="importInput" type="file" accept="audio/*" style="display:none" />
+      </div>
+    </div>
+
+    <!-- stage -->
+    <div class="stage" id="stage">
+      <canvas id="game"></canvas>
+      <div class="auto-badge" id="autoBadge">AUTO-PLAY</div>
+      <div class="lanes" id="lanes"></div>
+    </div>
+    <div class="hint">Tap keys <b>1–4</b> (or touch) as tiles hit the line · hold long notes · <b>P</b> pause</div>
+
+    <!-- controls -->
+    <div class="controls">
+      <button class="play-btn" id="playBtn">▶ Play</button>
+      <button class="ghost-btn" id="autoBtn">Auto-Play Demo</button>
+    </div>
+
+    <!-- difficulty + speed -->
+    <div class="settings">
+      <div class="diff-row">
+        <span class="set-label">DIFF</span>
+        <div class="diff-btns">
+          <button class="diff-btn ghost-btn-sm" data-level="0">Easy</button>
+          <button class="diff-btn ghost-btn-sm active" data-level="1">Normal</button>
+          <button class="diff-btn ghost-btn-sm" data-level="2">Hard</button>
+        </div>
+      </div>
+      <div class="speed-row">
+        <span class="set-label">SPEED</span>
+        <input id="speedSlider" type="range" min="1" max="2" step="0.1" value="1" />
+        <span class="speed-val" id="speedVal">1.00×</span>
+      </div>
+      <div class="speed-row" id="bpmRow" style="display:none">
+        <span class="set-label">BPM</span>
+        <input id="bpmSlider" type="range" min="60" max="180" step="1" value="120" />
+        <span class="speed-val" id="bpmVal">120 BPM</span>
+        <button class="ghost-btn-sm tap-btn" id="tapBtn" title="Tap along to the beat to set tempo">TAP</button>
+      </div>
+    </div>
+
+    <!-- scoreboard -->
+    <div class="scoreboard" id="scoreboard">
+      <div class="counter"><div class="counter-label">SCORE</div><div class="flip-digits" id="scoreDigits">0000</div></div>
+      <div class="counter"><div class="counter-label">COMBO</div><div class="flip-digits small" id="comboDigits">0</div></div>
+      <div class="counter"><div class="counter-label">ACC</div><div class="flip-digits small" id="accDigits">100%</div></div>
+      <div class="counter"><div class="counter-label">PREC</div><div class="flip-digits small" id="precisionDigits">100%</div></div>
+      <div class="counter"><div class="counter-label">MULT</div><div class="flip-digits small" id="multDigits">x1</div></div>
+    </div>
+
+    <!-- leaderboard -->
+    <div class="leaderboard">
+      <h3>🏆 Leaderboard — <span id="lbSong">Midnight Groove</span></h3>
+      <div id="songBest" class="song-best">No score yet — set a record!</div>
+      <ol id="lbList"></ol>
+    </div>
+
+    <!-- pause overlay -->
+    <div class="overlay" id="pauseOverlay" hidden>
+      <div class="overlay-box">
+        <div class="overlay-title">PAUSED</div>
+        <button class="play-btn" id="resumeBtn">Resume</button>
+        <button class="ghost-btn" id="quitBtn">Quit to Menu</button>
+      </div>
+    </div>
+
+    <!-- results overlay -->
+    <div class="overlay" id="resultOverlay" hidden>
+      <div class="overlay-box">
+        <div class="overlay-rank" id="finalRank">S</div>
+        <div class="overlay-stars" id="finalStars">☆☆☆</div>
+        <div class="overlay-title" id="resultTitle">Song Complete!</div>
+        <div class="unlock-toast" id="unlockToast" hidden>🎉 New song unlocked!</div>
+        <div id="newBest" class="new-best" hidden>★ NEW RECORD ★</div>
+        <div id="prevBest" class="prev-best" hidden></div>
+        <div class="big-score" id="finalScore">0</div>
+        <div class="stats-row">
+          <div class="stat"><span id="finalPerfect">0</span><label>PERFECT</label></div>
+          <div class="stat"><span id="finalGood">0</span><label>GOOD</label></div>
+          <div class="stat"><span id="finalMiss">0</span><label>MISS</label></div>
+          <div class="stat"><span id="finalPrec">100%</span><label>PRECISION</label></div>
+          <div class="stat"><span id="finalCombo">0</span><label>MAX COMBO</label></div>
+        </div>
+        <div class="name-row">
+          <input id="scoreName" type="text" maxlength="20" placeholder="Your name" />
+          <button id="submitBtn" class="ghost-btn">Save</button>
+        </div>
+        <div id="submitMsg" class="submit-msg"></div>
+        <div class="overlay-actions">
+          <button id="retryBtn" class="play-btn">↻ Retry</button>
+          <button id="backBtn" class="ghost-btn">Menu</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

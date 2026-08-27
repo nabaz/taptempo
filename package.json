@@ -1,0 +1,13 @@
+{
+  "name": "magic-tiles-rhythm",
+  "version": "1.0.0",
+  "description": "Magic Tiles 3 style rhythm game for friendly browser competition",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
