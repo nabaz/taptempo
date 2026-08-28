@@ -5,7 +5,24 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
 const COLS = 4;
-const COLORS = ['#f2a65a', '#e37b7b', '#5fbdb0', '#9d8cff'];
+
+// Note color themes (persisted so it survives reloads)
+const THEMES = {
+  classic: { name: 'Classic', colors: ['#f2a65a', '#e37b7b', '#5fbdb0', '#9d8cff'] },
+  neon:    { name: 'Neon',    colors: ['#ff6b9d', '#4dd0ff', '#b6ff4d', '#ffd740'] },
+  pastel:  { name: 'Pastel',  colors: ['#ffd3a5', '#ffc3c3', '#c1f0d8', '#c4c9ff'] },
+  mono:    { name: 'Mono',    colors: ['#e8ecf1', '#c9d2dc', '#aab6c4', '#8c9aab'] },
+};
+let COLORS = THEMES.classic.colors.slice();
+function applyTheme(name) {
+  const t = THEMES[name] || THEMES.classic;
+  COLORS = t.colors.slice();
+  localStorage.setItem('mt-theme', name);
+  // re-apply lane key colors
+  const keys = document.querySelectorAll('.lane-key');
+  for (let c = 0; c < COLS; c++) keys[c] && keys[c].style.setProperty('--k', COLORS[c]);
+  document.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
+}
 
 // Difficulty tuning: precision windows (PERFECT / GOOD / MISS, seconds) per level
 const LEVEL_TUNE = [
@@ -22,7 +39,11 @@ const el = (id) => document.getElementById(id);
 // persisted settings
 let speedMult = clamp(parseFloat(localStorage.getItem('mt-speed') || '1'), 1, 2);
 
-function speed() { return (canvas.height / getDPR()) * 0.62 * speedMult; }
+// Base scroll speed ramps by difficulty so harder songs move notes noticeably
+// faster (Easy .92 / Normal 1 / Hard 1.18) — a visual difficulty ramp tuned so
+// taps still land on the beat regardless of speed.
+function speed() { return (canvas.height / getDPR()) * 0.62 * speedMult * speedRamp(); }
+function speedRamp() { return [0.92, 1, 1.18][clamp(state.level, 0, 2)]; }
 
 const state = {
   mode: 'menu', // menu | playing | done
@@ -38,6 +59,8 @@ const state = {
   perfect: 0,
   good: 0,
   miss: 0,
+  perfectChain: 0,
+  maxPerfectChain: 0,
   accuracy: 100,
   precision: 100,
   timingErrSum: 0,
@@ -47,12 +70,18 @@ const state = {
   judgeT: 0,
   hold: null,
   particles: [],
+  popups: [], // floating +/- text: { x, y, vy, life, text, color }
   clockOffset: 0,
   pauseStart: 0,
+  crash: null, // { wrongCol, rightCol, at } — set when a wrong key is hit
+  elapsedFrozen: null, // seconds — beatmap clock held still during a crash
+  flash: null, // { text, color, at, big } — center milestone flash
   playerName: localStorage.getItem('mt-name') || '',
 };
 
 window.state = state;
+
+function playerName() { return state.playerName; }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -219,13 +248,22 @@ export function startGame(song, auto, level = 1) {
   state.perfect = 0;
   state.good = 0;
   state.miss = 0;
+  state.perfectChain = 0;
+  state.maxPerfectChain = 0;
   state.accuracy = 100;
   state.precision = 100;
   state.timingErrSum = 0;
   state.timingErrN = 0;
   state.clockOffset = 0;
+  state.crash = null;
+  state.elapsedFrozen = null;
+  state.flash = null;
   state.particles = [];
+  state.popups = [];
+  state.crashPauseStart = 0;
   state.importStartAudio = null;
+  lastHUDCombo = 0;
+  lastHUDMult = 1;
   if (isImport()) {
     state.notes = importState.notes.slice();
     audio.playBuffer(importState.buffer, false);
@@ -255,6 +293,9 @@ export function startGame(song, auto, level = 1) {
 // audio (ctx.currentTime) so tiles land exactly on the song's onsets; for the
 // built-in procedural songs we use wall-clock with pause offset.
 function gameElapsed() {
+  // While a crash is active, hold the beatmap clock perfectly still so the
+  // player can read the tiles and tap the right key to get back on track.
+  if (state.elapsedFrozen != null) return state.elapsedFrozen;
   if (isImport() && state.importStartAudio != null && audio.ctx) {
     return audio.ctx.currentTime - state.importStartAudio;
   }
@@ -265,8 +306,13 @@ function loop() {
   if (state.mode !== 'playing') return;
   resizeCanvas();
   const now = performance.now();
+  let e = gameElapsed();
+  if (state.crash) {
+    draw(Math.max(0.0001, e), true);
+    requestAnimationFrame(loop);
+    return;
+  }
   if (state.paused) {
-    const e = gameElapsed();
     draw(Math.max(0.0001, e), true);
     requestAnimationFrame(loop);
     return;
@@ -276,6 +322,7 @@ function loop() {
   audio.schedule(6);
 
   resolveNotes(elapsed);
+  updateHoldTicks(elapsed);
   updateHUD();
   updateLaneKeys(false);
 
@@ -349,13 +396,19 @@ function hit(note, elapsed, forced = false) {
   state.timingErrSum += forced ? 0 : diff;
   state.timingErrN++;
   reconcilePrecision();
-  if (pz) { state.perfect++; packScore(10); setJudge('PERFECT', Math.round(diff * 1000)); spawnBurst(note.col, true); }
-  else    { state.good++;    packScore(5);  setJudge('GOOD', Math.round(diff * 1000));    spawnBurst(note.col, false); }
+  if (pz) { state.perfect++; packScore(10); setJudge('PERFECT', Math.round(diff * 1000)); spawnBurst(note.col, true); spawnPopup('+10', note.col, COLORS[note.col]); }
+  else    { state.good++;    packScore(5);  setJudge('GOOD', Math.round(diff * 1000));    spawnBurst(note.col, false); spawnPopup('+5', note.col, '#cfcfcf'); }
+  if (pz) {
+    state.perfectChain++;
+    state.maxPerfectChain = Math.max(state.maxPerfectChain, state.perfectChain);
+  } else {
+    state.perfectChain = 0;
+  }
   state.lastJudge = pz ? 'PERFECT' : 'GOOD';
   note.hit = true;
   note.missed = false;
   if (note.type === 'hold') {
-    state.hold = { note, col: note.col, releaseAt: note.time + note.dur };
+    state.hold = { note, col: note.col, releaseAt: note.time + note.dur, lastTick: elapsed };
     note.holding = true;
   }
   reconcileAccuracy();
@@ -369,26 +422,92 @@ function release(hold, elapsed, forced = false) {
   const note = hold.note;
   note.holding = false;
   state.hold = null;
-  void forced; void elapsed;
+  // slid (held) the full length → completion bonus
+  if (!forced && elapsed >= hold.releaseAt - tune().perfect) {
+    state.perfect++;
+    packScore(8);
+    setJudge('HOLD +8', 0);
+    spawnPopup('HOLD', note.col, COLORS[note.col]);
+  }
+}
+
+// While a long tile is held/slid, each beat of sustained contact ticks +2
+// points and +1 combo — the longer you keep sliding, the more you earn.
+function holdTickInterval() {
+  const s = state.song;
+  const beatDur = s && s.bpm ? 60 / s.bpm : 0.5;
+  return beatDur / 2; // tick twice per beat for a lively slide feel
+}
+function updateHoldTicks(elapsed) {
+  const h = state.hold;
+  if (!h) return;
+  const iv = holdTickInterval();
+  while (elapsed - h.lastTick >= iv) {
+    h.lastTick += iv;
+    state.combo++;
+    state.maxCombo = Math.max(state.maxCombo, state.combo);
+    packScore(2);
+    reconcileAccuracy();
+    spawnPopup('+2', h.col, COLORS[h.col] || COLORS[0]);
+    setHoldJudge();
+  }
+}
+let lastHoldJudgeAt = 0;
+function setHoldJudge() {
+  const now = performance.now();
+  if (now - lastHoldJudgeAt > 160) {
+    lastHoldJudgeAt = now;
+    setJudge('SLIDE', 0);
+  }
 }
 
 function registerMiss(note, elapsed) {
   state.miss++;
   state.combo = 0;
+  state.perfectChain = 0;
   note.missed = true;
   note.holding = false;
   state.lastJudge = 'MISS';
   if (state.hold && state.hold.note === note) state.hold = null;
   setJudge('MISS');
+  spawnPopup('MISS', note.col, '#ff8c8c');
+  shakeStage(8);
   reconcileAccuracy();
   const idx = state.remainingNotes.indexOf(note);
   if (idx >= 0) state.remainingNotes.splice(idx, 1);
+}
+
+function spawnPopup(text, col, color) {
+  const x = col * laneW() + laneW() / 2;
+  state.popups.push({ x, y: hitY() - 28, vy: -60, life: 0.7, text, color, size: 16 });
+  if (state.popups.length > 24) state.popups.shift();
+}
+
+// Briefly shake the game stage for a "hit" feel on misses / crashes.
+let shakeUntil = 0;
+let shakeMag = 0;
+function shakeStage(mag) {
+  shakeMag = Math.max(shakeMag, mag);
+  shakeUntil = performance.now() + 180;
+  const stage = el('stage');
+  if (stage) stage.classList.add('shaking');
+  setTimeout(() => el('stage') && el('stage').classList.remove('shaking'), 200);
 }
 
 function packScore(points) {
   state.combo++;
   state.maxCombo = Math.max(state.maxCombo, state.combo);
   state.score += Math.round(points * multiplier());
+  // Combo streak milestone celebration every 25 hits.
+  if (state.combo > 0 && state.combo % 25 === 0) {
+    centerFlash(`${state.combo} COMBO!`, COLORS[(state.combo / 25) % COLORS.length | 0], true);
+  } else if (state.combo === 10 || state.combo === 20) {
+    centerFlash(`${state.combo} combo`, '#cfcfcf');
+  }
+}
+
+function centerFlash(text, color, big = false) {
+  state.flash = { text, color, at: performance.now(), big };
 }
 function multiplier() {
   return Math.min(8, Math.floor(state.combo / 10) + 1);
@@ -431,6 +550,8 @@ function inputToCol(clientX) {
 }
 function tap(col) {
   if (state.mode !== 'playing' || state.auto || state.paused) return;
+  // A crash is active: any tap resumes play (like Magic Tiles 3).
+  if (state.crash) { clearCrash(); return; }
   const elapsed = gameElapsed();
   if (state.hold && state.hold.col === col) return;
   let best = null, bestDiff = Infinity;
@@ -442,6 +563,9 @@ function tap(col) {
   if (best) {
     hit(best, elapsed);
     while (state.notePtr < state.notes.length && state.notes[state.notePtr].hit) state.notePtr++;
+  } else {
+    // Wrong key: no tile in this lane to hit right now — crash.
+    triggerCrash(col);
   }
 }
 function releaseCol(col) {
@@ -453,9 +577,65 @@ function releaseCol(col) {
   }
 }
 
+function nearestUpcomingNote() {
+  const elapsed = gameElapsed();
+  let best = null, bestT = Infinity;
+  for (const note of state.remainingNotes) {
+    const t = noteGameTime(note);
+    if (t >= elapsed - 0.05 && t < bestT) { best = note; bestT = t; }
+  }
+  return best;
+}
+
+function triggerCrash(wrongCol) {
+  state.crash = { wrongCol, rightCol: -1, at: performance.now() };
+  const next = nearestUpcomingNote();
+  if (next) state.crash.rightCol = next.col;
+  // Freeze the beatmap at this instant so NO tiles move while the player is
+  // recovering — otherwise it's impossible to get back on track.
+  state.crashPauseStart = performance.now();
+  state.elapsedFrozen = gameElapsed();
+  audio.pause();
+  audio.horn();
+  updateLaneKeys(true);
+  flashCrash(wrongCol, state.crash.rightCol);
+  shakeStage(14);
+}
+
+function clearCrash() {
+  if (!state.crash) return;
+  state.crash = null;
+  // Account for the wall-clock time spent frozen so the clock is seamless.
+  if (state.crashPauseStart) {
+    state.clockOffset += performance.now() - state.crashPauseStart;
+    state.crashPauseStart = 0;
+  }
+  state.elapsedFrozen = null;
+  audio.ensure();
+  audio.resume();
+  updateLaneKeys(true);
+  document.querySelectorAll('.lane-key').forEach((k) => {
+    k.classList.remove('crash-wrong', 'crash-right');
+  });
+}
+
+// Highlight a lane key as wrong (red pulse) or as the correct one (accent flash).
+function flashCrash(wrongCol, rightCol) {
+  const keys = document.querySelectorAll('.lane-key');
+  if (keys[wrongCol]) {
+    keys[wrongCol].classList.add('crash-wrong');
+    setTimeout(() => keys[wrongCol] && keys[wrongCol].classList.remove('crash-wrong'), 600);
+  }
+  if (rightCol >= 0 && keys[rightCol]) {
+    keys[rightCol].classList.add('crash-right');
+    setTimeout(() => keys[rightCol] && keys[rightCol].classList.remove('crash-right'), 900);
+  }
+}
+
 canvas.addEventListener('pointerdown', (e) => tap(inputToCol(e.clientX)));
 canvas.addEventListener('pointerup', (e) => releaseCol(inputToCol(e.clientX)));
 window.addEventListener('keydown', (e) => {
+  if (state.mode === 'playing' && state.crash) { clearCrash(); return; }
   const map = { D: 0, F: 1, J: 2, K: 3 };
   const k = e.key.toUpperCase();
   if (k in map) tap(map[k]);
@@ -484,8 +664,40 @@ function updateHUD(force) {
   el('comboDigits').textContent = state.combo;
   el('accDigits').textContent = Math.round(state.accuracy) + '%';
   el('precisionDigits').textContent = Math.round(state.precision) + '%';
-  el('multDigits').textContent = 'x' + multiplier();
+  const m = multiplier();
+  el('multDigits').textContent = 'x' + m;
+  // keep the compact bottom metric grid in sync (duplicate "…2" ids)
+  const g = (id, v) => { const e = el(id); if (e) e.textContent = v; };
+  g('scoreDigits2', String(state.score).padStart(4, '0'));
+  g('comboDigits2', state.combo);
+  g('accDigits2', Math.round(state.accuracy) + '%');
+  g('precisionDigits2', Math.round(state.precision) + '%');
+  g('multDigits2', 'x' + m);
+  if (!force) {
+    const comboEl = el('comboDigits');
+    if (comboEl) {
+      if (state.combo === 0 && lastHUDCombo > 0) {
+        comboEl.classList.remove('combo-pop', 'mult-pop');
+        void comboEl.offsetWidth;
+        comboEl.classList.add('combo-broken');
+      } else if (state.combo > lastHUDCombo) {
+        comboEl.classList.remove('combo-broken');
+        void comboEl.offsetWidth;
+        comboEl.classList.add('combo-pop');
+      }
+      if (lastHUDMult < m && m > 1) {
+        const multEl = el('multDigits');
+        multEl.classList.remove('mult-pop');
+        void multEl.offsetWidth;
+        multEl.classList.add('mult-pop');
+      }
+    }
+  }
+  lastHUDCombo = state.combo;
+  lastHUDMult = m;
 }
+let lastHUDCombo = 0;
+let lastHUDMult = 1;
 
 let laneFlash = [0, 0, 0, 0];
 function flashKey(col) {
@@ -554,18 +766,60 @@ function shade(hex, amt) {
   return `rgb(${r},${g},${b})`;
 }
 
+// ---- beat-reactive background helpers ----
+const ACCENT_HEX = { amber: '#f2a65a', rose: '#e37b7b', teal: '#5fbdb0', violet: '#9d8cff' };
+function currentAccent() {
+  const s = state.song || {};
+  const hex = ACCENT_HEX[s.accent] || '#f2a65a';
+  const n = parseInt(hex.slice(1), 16);
+  const rgb = { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  return {
+    ...rgb,
+    fade(a) { return `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`; },
+  };
+}
+// Hue-shift the ambient tint per chord-section (bar) so sections feel distinct.
+function accentBase(bar) {
+  const a = currentAccent();
+  const section = ((bar % 16) / 16) * 2 - 1; // -1..1 cycling
+  return {
+    r: Math.round(clamp(a.r - section * 16, 0, 255)),
+    g: Math.round(clamp(a.g + section * 20, 0, 255)),
+    b: Math.round(clamp(a.b + section * 8, 0, 255)),
+  };
+}
+function darkBgTint(tint, amount) {
+  const t = tint || { r: 19, g: 15, b: 30 };
+  const f = Math.max(0, Math.min(1, amount));
+  return `rgba(${Math.round(t.r * f + 19 * (1 - f))},${Math.round(t.g * f + 15 * (1 - f))},${Math.round(t.b * f + 30 * (1 - f))},1)`;
+}
+
 function draw(elapsed, paused) {
   const W = canvas.width / getDPR();
   const H = canvas.height / getDPR();
   ctx.clearRect(0, 0, W, H);
 
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#130f1e');
-  g.addColorStop(1, '#0d0b16');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+  // Beat-synced background: the tint shifts per chord section and a soft
+  // pulse breathes on every downbeat so the visuals follow the music.
+  const song = state.song;
+  const beatDur = song && song.bpm ? 60 / song.bpm : 0.5;
+  const beats = beatDur ? Math.max(0, elapsed / beatDur) : 0;
+  const bar = Math.floor(beats / 4);
+  const beatPhase = beats % 1;              // 0..1 within the current beat
+  const pulse = Math.pow(Math.max(0, 1 - beatPhase), 2.2); // decays after each beat
+  const accent = currentAccent();
+  const tint = accentBase(bar);
 
   const hy = hitY();
+  ctx.fillStyle = darkBgTint(tint, pulse * 0.08);
+  ctx.fillRect(0, 0, W, H);
+  // glow band rising from the hit line on each beat
+  const glowA = pulse * 0.16;
+  if (glowA > 0.01) {
+    ctx.fillStyle = accent.fade(glowA);
+    ctx.fillRect(0, hy, H * 0.5, H - hy);
+  }
+
   // layered glowing hit line
   ctx.save();
   ctx.fillStyle = 'rgba(245,239,230,0.06)';
@@ -641,6 +895,28 @@ function draw(elapsed, paused) {
     }
   }
 
+  // floating score popups
+  if (state.popups.length) {
+    const dt = nowT - (state.lastFrame || nowT);
+    ctx.textAlign = 'center';
+    for (let i = state.popups.length - 1; i >= 0; i--) {
+      const p = state.popups[i];
+      p.life -= dt;
+      if (p.life <= 0) { state.popups.splice(i, 1); continue; }
+      p.y += p.vy * dt;
+      const alpha = Math.max(0, p.life / 0.7);
+      ctx.globalAlpha = alpha;
+      ctx.font = `bold ${p.size}px -apple-system, sans-serif`;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
   // judge pop
   if (state.judge) {
     const age = (performance.now() - state.judgeT) / 1000;
@@ -665,10 +941,80 @@ function draw(elapsed, paused) {
     }
   }
 
+  // combo milestone / center flash
+  if (state.flash) {
+    const fage = (performance.now() - state.flash.at) / 1000;
+    if (fage < 0.9) {
+      const alpha = fage < 0.6 ? 1 : 1 - (fage - 0.6) / 0.3;
+      const scale = 1 + Math.min(0.3, fage * 0.5);
+      ctx.save();
+      ctx.translate(W / 2, H * 0.34);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.font = state.flash.big ? 'bold 42px -apple-system, sans-serif' : 'bold 26px -apple-system, sans-serif';
+      ctx.fillStyle = state.flash.color;
+      ctx.shadowColor = state.flash.color;
+      ctx.shadowBlur = 20;
+      ctx.fillText(state.flash.text, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.font = 'bold 20px -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(245,239,230,0.95)';
+      ctx.fillText('KEEP GOING!', 0, 34);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
+    } else {
+      state.flash = null;
+    }
+  }
+
+  // perfect-chain counter (top center)
+  if (state.perfectChain > 1 && !state.crash) {
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = Math.min(1, 0.35 + state.perfectChain * 0.02);
+    ctx.font = 'bold 13px -apple-system, sans-serif';
+    ctx.fillStyle = COLORS[0];
+    ctx.shadowColor = COLORS[0];
+    ctx.shadowBlur = 12;
+    ctx.fillText(`PERFECT CHAIN x${state.perfectChain}`, W / 2, 26);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
   if (paused) {
     // dim only; the actual pause overlay is DOM
     ctx.fillStyle = 'rgba(13,11,22,0.4)';
     ctx.fillRect(0, 0, W, H);
+  }
+
+  if (state.crash) {
+    // Red-tinted screen with a "WRONG KEY" flash and a prompt to continue.
+    const age = (performance.now() - state.crash.at) / 1000;
+    ctx.fillStyle = 'rgba(190,40,40,0.18)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = 'bold 30px -apple-system, sans-serif';
+    ctx.fillText('WRONG KEY', W / 2, H * 0.3);
+    ctx.font = '15px -apple-system, sans-serif';
+    ctx.fillStyle = 'rgba(245,239,230,0.85)';
+    ctx.fillText('tap any key to continue', W / 2, H * 0.3 + 30);
+    ctx.textAlign = 'left';
+    if (state.crash.rightCol >= 0) {
+      // draw a subtle pointer to the correct lane
+      ctx.fillStyle = COLORS[state.crash.rightCol];
+      ctx.globalAlpha = 0.9;
+      const hx = state.crash.rightCol * laneW() + laneW() / 2;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy + 10);
+      ctx.lineTo(hx - 12, hy - 6);
+      ctx.lineTo(hx + 12, hy - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -701,6 +1047,7 @@ function finishGame() {
   if (starBox) starBox.innerHTML = starString(stars);
 
   const { isNew, unlockedNext, unlockedTitle } = recordResult(state.song, state.level, state.score, state.accuracy, state.maxCombo, rank, stars);
+  applyProgressRun(state.song, rank, stars, state.accuracy, state.miss, state.maxPerfectChain);
   el('newBest').hidden = !isNew;
   const pb = el('prevBest');
   const prevBest = getBestLevel(state.song, state.level);
@@ -772,20 +1119,31 @@ function recordResult(song, level, score, acc, combo, rank, stars) {
     localStorage.setItem(key, JSON.stringify({ score, acc, combo, rank, stars, level }));
   }
   if (song.id === '__import__') return { isNew, unlockedNext: false, unlockedTitle: null };
+  // Resolve this song's index. Fall back to the current deck position so the
+  // unlock always targets the song the player is actually looking at next.
+  let idx = SONGS.findIndex((s) => s.id === song.id);
+  if (idx === -1 && typeof songIndex === 'number' && song.id === (SONGS[songIndex] || {}).id) {
+    idx = songIndex;
+  }
   // update progress: per-song best stars
   const p = readProgress();
   const prevStars = p.stars[song.id] || 0;
   if (stars > prevStars) p.stars[song.id] = stars;
-  // sequential unlock: earning >=1 star on this song unlocks the next one
-  const idx = SONGS.findIndex((s) => s.id === song.id);
+  // sequential unlock: earning >=1 star on this song unlocks the next one.
+  // The toast only fires when we are certain the exact next song exists,
+  // is not already unlocked, and we successfully write it this run.
+  const nextIndex = idx + 1;
   let unlockedNext = false;
   let unlockedTitle = null;
-  if (stars >= 1 && idx + 1 < SONGS.length && !p.unlocked[idx + 1]) {
-    p.unlocked[idx + 1] = true;
-    unlockedNext = true;
-    unlockedTitle = SONGS[idx + 1].title;
+  if (stars >= 1 && idx !== -1 && nextIndex < SONGS.length && !p.unlocked[nextIndex]) {
+    p.unlocked[nextIndex] = true;
+    writeProgress(p);
+    const written = readProgress();
+    unlockedNext = !!written.unlocked[nextIndex];
+    unlockedTitle = unlockedNext ? SONGS[nextIndex].title : null;
+  } else {
+    writeProgress(p);
   }
-  writeProgress(p);
   return { isNew, unlockedNext, unlockedTitle };
 }
 
@@ -793,6 +1151,185 @@ function starString(n) {
   let out = '';
   for (let i = 0; i < 3; i++) out += i < n ? '★' : '☆';
   return out;
+}
+
+// ---------- XP / levels / achievements / profile ----------
+const XP_LEVELS = 200;            // xp needed per level
+function levelForXp(xp) { return Math.floor(xp / XP_LEVELS) + 1; }
+function xpIntoLevel(xp) { return xp % XP_LEVELS; }
+
+function readProfl() {
+  try { return JSON.parse(localStorage.getItem('mt-profile')) || { xp: 0, ach: {}, titles: {} }; }
+  catch { return { xp: 0, ach: {}, titles: {} }; }
+}
+function writeProfl(q) { localStorage.setItem('mt-profile', JSON.stringify(q)); }
+
+// song mastery title thresholds (per song, uses best stars across difficulties)
+const MASTERY = [
+  { stars: 3, title: '⭐ Conqueror' },
+  { stars: 6, title: '🎖 Master' },
+];
+
+function achievementsDef() {
+  return [
+    { id: 'first',  icon: '🎯', name: 'First Step',        desc: 'Play your first song', test: (a) => a.played >= 1 },
+    { id: 's10',    icon: '🗂',  name: 'Ten Tracks',        desc: 'Earn 10 songs worth of plays', test: (a) => a.played >= 10 },
+    { id: 'rankS',  icon: '🏆', name: 'S Rank',            desc: 'Earn an S rank', test: (a) => a.ranks.S >= 1 },
+    { id: 'fc',     icon: '💯', name: 'Full Combo',        desc: 'A run with zero misses', test: (a) => a.fullCombo >= 1 },
+    { id: 'pc25',   icon: '🔗', name: 'Chain 25',          desc: 'A 25+ perfect chain', test: (a) => a.maxPChain >= 25 },
+    { id: 'star9',  icon: '🌟', name: 'Nine Stars',        desc: 'Collect 9 stars total', test: (a) => a.stars >= 9 },
+    { id: 'lvl5',   icon: '⚡', name: 'Level 5',           desc: 'Reach player level 5', test: (a) => a.lvl >= 5 },
+    { id: 'master', icon: '👑', name: 'Song Master',       desc: 'Master any song', test: (a) => a.mastered >= 1 },
+  ];
+}
+
+function awardXp(amount, opts = {}) {
+  const q = readProfl();
+  q.xp += amount;
+  const prevLvl = levelForXp(q.xp - amount);
+  const newLvl = levelForXp(q.xp);
+  writeProfl(q);
+  if (newLvl > prevLvl && opts.levelUp) {
+    opts.levelUp(newLvl);
+  }
+  return q.xp;
+}
+
+function grantAchievements(updates, perform) {
+  const q = readProfl();
+  let earned = 0;
+  const defs = achievementsDef();
+  for (const d of defs) {
+    if (q.ach[d.id]) continue;
+    if (d.test(updates)) {
+      q.ach[d.id] = true;
+      earned++;
+      if (earned > 0 && perform) perform(d);
+    }
+  }
+  if (earned > 0) writeProfl(q);
+  return earned;
+}
+
+function achievementState() {
+  const q = readProfl();
+  // re-hydrate aggregate counters from stored bests
+  const p = readProgress();
+  let stars = 0;
+  let mastered = 0;
+  for (const s of SONGS) {
+    const bs = p.stars[s.id] || 0;
+    stars += bs;
+    if (bs >= 6) mastered++;
+  }
+  const a = {
+    played: q.played || 0,
+    ranks: q.ranks || {},
+    fullCombo: q.fullCombo || 0,
+    maxPChain: q.maxPChain || 0,
+    stars,
+    mastered,
+    lvl: levelForXp(q.xp),
+  };
+  return a;
+}
+
+// on finishing a run: aggregate stats, award xp + achievements, render toasts
+function applyProgressRun(song, rank, stars, acc, missed, perfectChainMax) {
+  const q = readProfl();
+  q.played = (q.played || 0) + 1;
+  q.ranks = q.ranks || {};
+  q.ranks[rank] = (q.ranks[rank] || 0) + 1;
+  if (missed === 0) q.fullCombo = (q.fullCombo || 0) + 1;
+  q.maxPChain = Math.max(q.maxPChain || 0, perfectChainMax);
+  writeProfl(q);
+
+  const earned = [];
+  let levelBefore = levelForXp(q.xp);
+  const xpGained = baseXpFor(stars) + (missed === 0 ? 40 : 0);
+  awardXp(xpGained, {
+    levelUp: (lvl) => earned.push({ icon: '⬆️', name: `LEVEL UP! Level ${lvl}` }),
+  });
+  grantAchievements(achievementState(), (d) => earned.push(d));
+
+  const toasts = el('achieveToasts');
+  if (toasts) toasts.innerHTML = '';
+  if (earned.length) {
+    for (const e of earned) {
+      const t = document.createElement('div');
+      t.className = 'achieve-toast';
+      t.textContent = `${e.icon} ${e.name}`;
+      toasts.appendChild(t);
+    }
+  }
+  // xp gain line in results
+  const xpEl = el('xpGain');
+  if (xpEl) {
+    xpEl.hidden = false;
+    xpEl.textContent = `+${xpGained} XP · LV ${levelBefore} → LV ${levelForXp(readProfl().xp)}`;
+  }
+  refreshProfileBadge();
+  return earned;
+}
+
+function baseXpFor(stars) {
+  // stars awarded: 0 = 15, 1 = 40, 2 = 70, 3 = 110 + multi/rank bonus handled above
+  return [15, 40, 70, 110][Math.min(3, stars)] + (stars > 0 ? 10 : 0);
+}
+
+function refreshProfileBadge() {
+  const q = readProfl();
+  const lv = levelForXp(q.xp);
+  const into = xpIntoLevel(q.xp);
+  const pct = Math.round((into / XP_LEVELS) * 100);
+  const lvNum = el('lvNum');
+  if (lvNum) lvNum.textContent = lv;
+  const bar = el('xpBarSmall');
+  if (bar) bar.textContent = `${pct}%`;
+}
+
+function openProfile() {
+  const q = readProfl();
+  const lv = levelForXp(q.xp);
+  const into = xpIntoLevel(q.xp);
+  const a = achievementState();
+  el('profLv').textContent = lv;
+  el('profXpLabel').textContent = `${into} / ${XP_LEVELS} XP`;
+  el('profXpFill').style.width = `${Math.round((into / XP_LEVELS) * 100)}%`;
+
+  // achievements
+  const grid = el('profileAchievements');
+  grid.innerHTML = '';
+  for (const d of achievementsDef()) {
+    const done = !!q.ach[d.id];
+    const c = document.createElement('div');
+    c.className = 'achieve-cell' + (done ? '' : ' locked');
+    c.innerHTML = `<div class="ac-ico">${done ? d.icon : '🔒'}</div><div class="ac-name">${d.name}</div><div class="ac-desc">${d.desc}</div>`;
+    grid.appendChild(c);
+  }
+
+  // song mastery
+  const list = el('profileMastery');
+  list.innerHTML = '';
+  if (!SONGS.length) {
+    const it = document.createElement('div');
+    it.className = 'mastery-item empty';
+    it.textContent = 'No songs yet';
+    list.appendChild(it);
+  } else {
+    for (const s of SONGS) {
+      const p = readProgress();
+      const bs = p.stars[s.id] || 0;
+      const it = document.createElement('div');
+      it.className = 'mastery-item';
+      let title = 'Locked';
+      for (const m of MASTERY) if (bs >= m.stars) title = m.title;
+      it.innerHTML = `<div class="m-name">${s.title}</div><div class="m-title">${bs > 0 ? `${bs}★ · ${title}` : 'Not played'}</div>`;
+      list.appendChild(it);
+    }
+  }
+
+  el('profileOverlay').hidden = false;
 }
 
 // ---------- leaderboard ----------
@@ -827,9 +1364,10 @@ async function loadLeaderboard() {
       .filter((s) => s.song === song.title && (s.difficulty === LEVELS[state.level] || !s.difficulty))
       .sort((a, b) => b.score - a.score).slice(0, 8);
     if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">No scores yet — be the first!</li>'; return; }
-    listEl.innerHTML = rows.map((s, i) =>
-      `<li><span class="lb-rank">${i + 1}</span><span class="lb-name">${escapeHtml(s.name)}</span><span class="lb-score">${fmtScore(s.score)}</span></li>`
-    ).join('');
+    listEl.innerHTML = rows.map((s, i) => {
+      const you = s.name === playerName() ? ' you' : '';
+      return `<li class="lb-row${you}"><span class="lb-rank">${i + 1}</span><span class="lb-name">${escapeHtml(s.name)}${you ? '<em> (you)</em>' : ''}</span><span class="lb-score">${fmtScore(s.score)}</span></li>`;
+    }).join('');
   } catch (e) {
     listEl.innerHTML = '<li class="lb-empty">Leaderboard unavailable</li>';
   }
@@ -1091,6 +1629,55 @@ el('muteBtn').addEventListener('click', () => {
   el('muteBtn').textContent = audio.muted ? '🔇' : '🔊';
 });
 
+function fsFullscreenElement() {
+  return document.fullscreenElement
+    || document.webkitFullscreenElement
+    || document.webkitCurrentFullScreenElement
+    || null;
+}
+function fsEnter(el) {
+  return (el.requestFullscreen && el.requestFullscreen())
+    || (el.webkitRequestFullscreen && el.webkitRequestFullscreen())
+    || Promise.resolve();
+}
+function fsExit() {
+  return (document.exitFullscreen && document.exitFullscreen())
+    || (document.webkitExitFullscreen && document.webkitExitFullscreen())
+    || Promise.resolve();
+}
+function fsEnabled() { return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled); }
+function toggleFullscreen() {
+  if (fsFullscreenElement()) {
+    fsExit();
+    if (el('fullscreenBtn')) el('fullscreenBtn').textContent = '⛶';
+  } else if (fsEnabled()) {
+    fsEnter(el('app') || document.documentElement).catch(() => {});
+    if (el('fullscreenBtn')) el('fullscreenBtn').textContent = '✕';
+  } else {
+    // Fullscreen API unsupported (e.g. most iPhone Safari) — show a hint.
+    const hint = el('hint');
+    if (hint) {
+      hint.textContent = 'Full screen isn\u2019t available in this browser — add the page to your Home Screen to play edge-to-edge.';
+      setTimeout(() => {
+        if (hint) hint.textContent = 'Tap keys D·F·J·K (or touch) as tiles hit the line · hold long notes · P pause';
+      }, 3000);
+    }
+  }
+}
+el('fullscreenBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const btn = el('fullscreenBtn');
+  if (btn) btn.textContent = fsFullscreenElement() ? '✕' : '⛶';
+  resizeCanvas();
+});
+
+// pause HUD button + bottom-nav shortcuts
+const pauseBtn = el('pauseBtn');
+if (pauseBtn) pauseBtn.addEventListener('click', () => togglePause());
+const navProfile = el('navProfile');
+if (navProfile) navProfile.addEventListener('click', () => { if (state.mode === 'play') togglePause(); openProfile(); });
+
+
 function stopEarly() {
   state.mode = 'menu';
   audio.stop();
@@ -1112,7 +1699,32 @@ hideOverlays();
 buildLanes();
 setLevel(1);
 renderSong();
+refreshProfileBadge();
+el('profileBtn').addEventListener('click', () => { if (state.mode === 'play') togglePause(); openProfile(); });
+el('profileCloseBtn').addEventListener('click', () => el('profileOverlay').hidden = true);
+el('profileOverlay').addEventListener('pointerdown', (e) => { if (e.target === e.currentTarget) el('profileOverlay').hidden = true; });
 if (el('speedVal')) el('speedVal').textContent = speedMult.toFixed(2) + '×';
+
+// note theme picker
+const savedTheme = localStorage.getItem('mt-theme') || 'classic';
+(function initThemes() {
+  const host = el('themeBtns');
+  if (!host) return;
+  host.innerHTML = '';
+  for (const name of Object.keys(THEMES)) {
+    const b = document.createElement('button');
+    b.className = 'theme-btn' + (name === savedTheme ? ' active' : '');
+    b.dataset.theme = name;
+    b.type = 'button';
+    b.title = THEMES[name].name;
+    b.style.setProperty('--g1', THEMES[name].colors[0]);
+    b.style.setProperty('--g2', THEMES[name].colors[2]);
+    b.addEventListener('click', () => applyTheme(name));
+    host.appendChild(b);
+  }
+  applyTheme(savedTheme);
+})();
+
 audio.ensure();
 
 // iOS requires a user gesture to unlock AudioContext.  We listen on both

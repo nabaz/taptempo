@@ -9,90 +9,148 @@
 </head>
 <body>
   <div class="grain"></div>
-  <div class="app">
+  <div class="app" id="app">
 
     <!-- topbar -->
-    <div class="topbar">
-      <div class="brand">TAP<span>TEMPO</span></div>
-      <div class="brand-sub">a rhythm arcade · friendly competition</div>
-      <div class="meta">DIFFICULTY <b id="diffNum">1</b> · <span id="bpmReadout">92 BPM</span></div>
-    </div>
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+      <div class="brand">
+        <div class="brand-name">TAP<span>TEMPO</span></div>
+        <div class="brand-sub">a rhythm arcade · friendly competition</div>
+      </div>
+      <button class="lv-badge" id="profileBtn" title="Your progress">LV <span id="lvNum">1</span><span class="lv-xp" id="xpBarSmall"></span></button>
+    </header>
 
-    <!-- cassette deck -->
-    <div class="deck" id="deck">
-      <button class="deck-arrow" id="prevSong" aria-label="Previous song">‹</button>
-      <div class="cassette">
-        <div class="reel"></div>
-        <div class="cassette-label">
-          <div class="song-name" id="songTitle">Midnight Groove</div>
-          <div class="song-genre" id="songGenre">Lo-fi · 92 BPM · Normal</div>
-          <div class="song-extra">
-            <span class="deck-stars" id="deckStars">☆☆☆</span>
-            <span class="lock-badge" id="lockBadge" hidden>🔒 Locked · earn 1★ (B+) on previous</span>
-          </div>
+    <!-- song / deck -->
+    <section class="deck song-card" id="deck">
+      <button class="deck-nav" id="prevSong" aria-label="Previous song">‹</button>
+      <div class="album" id="albumArt"></div>
+      <div class="song-info">
+        <div class="song-title" id="songTitle">Midnight Groove</div>
+        <div class="song-meta" id="songGenre">Lo-fi · 92 BPM · Normal</div>
+        <div class="song-meta-readout">DIFF <b id="diffNum">1</b> · <span id="bpmReadout">92 BPM</span></div>
+        <div class="song-extra">
+          <span class="deck-stars" id="deckStars">☆☆☆</span>
+          <span class="lock-badge" id="lockBadge" style="display:none">🔒 Locked · earn 1★ (B+) on previous</span>
         </div>
-        <div class="reel"></div>
       </div>
-      <button class="deck-arrow" id="nextSong" aria-label="Next song">›</button>
-      <div class="deck-actions">
-        <button id="importBtn" class="icon-btn" title="Import your own track (play-along)">⤓</button>
-        <button id="muteBtn" class="icon-btn" title="Mute">🔊</button>
-        <input id="importInput" type="file" accept="audio/*,.mp3,audio/mpeg,audio/mp3,audio/x-m4a,.m4a,.wav,audio/wav,audio/x-wav,.ogg,audio/ogg,.aac,audio/aac,.flac,audio/flac" style="display:none" />
+      <div class="song-actions">
+        <button id="importBtn" class="icon-btn" title="Import your own track (play-along)">↓</button>
+        <button id="muteBtn" class="icon-btn" title="Mute">♪</button>
+        <button id="fullscreenBtn" class="icon-btn" title="Full screen">⛶</button>
       </div>
-    </div>
+      <button class="deck-nav" id="nextSong" aria-label="Next song">›</button>
+      <input id="importInput" type="file" accept="audio/*,.mp3,audio/mpeg,audio/mp3,audio/x-m4a,.m4a,.wav,audio/wav,audio/x-wav,.ogg,audio/ogg,.aac,audio/aac,.flac,audio/flac,.aac" style="display:none" />
+    </section>
 
-    <!-- stage -->
-    <div class="stage" id="stage">
-      <canvas id="game"></canvas>
-      <div class="auto-badge" id="autoBadge">AUTO-PLAY</div>
-      <div class="lanes" id="lanes"></div>
-    </div>
-    <div class="hint">Tap keys <b>D·F·J·K</b> (or touch) as tiles hit the line · hold long notes · <b>P</b> pause</div>
+    <!-- game layout: side HUDs + playfield -->
+    <section class="game-layout">
+
+      <!-- left HUD -->
+      <aside class="side-panel left">
+        <div class="side-label">SCORE</div>
+        <div class="flip-digits side-score" id="scoreDigits">0000</div>
+        <div class="side-label">COMBO</div>
+        <div class="combo-circle" id="comboDigits">0</div>
+        <div class="side-label">MULT</div>
+        <div class="mult" id="multDigits">x1</div>
+      </aside>
+
+      <!-- playfield -->
+      <main class="playfield">
+        <div class="stage" id="stage">
+          <canvas id="game"></canvas>
+          <div class="auto-badge" id="autoBadge">AUTO-PLAY</div>
+          <div class="lanes" id="lanes"></div>
+        </div>
+        <div class="hint" id="hint">Tap keys <b>D·F·J·K</b> (or touch) as tiles hit the line · slide long notes · <b>P</b> pause</div>
+      </main>
+
+      <!-- right HUD -->
+      <aside class="side-panel right">
+        <div class="side-label">ACC</div>
+        <div class="side-stat" id="accDigits">100%</div>
+        <div class="side-label">PREC</div>
+        <div class="side-stat" id="precisionDigits">100%</div>
+        <button class="icon-btn" id="pauseBtn" title="Pause">Ⅱ</button>
+      </aside>
+
+    </section>
 
     <!-- controls -->
-    <div class="controls">
+    <section class="controls">
       <button class="play-btn" id="playBtn">▶ Play</button>
-      <button class="ghost-btn" id="autoBtn">Auto-Play Demo</button>
-    </div>
+      <button class="ghost-btn" id="autoBtn">🤖 Auto-Play Demo</button>
+    </section>
 
-    <!-- difficulty + speed -->
-    <div class="settings">
-      <div class="diff-row">
-        <span class="set-label">DIFF</span>
+    <!-- difficulty + speed + notes -->
+    <section class="settings">
+      <div class="setting-card diff-card">
+        <span class="setting-label">Difficulty</span>
         <div class="diff-btns">
           <button class="diff-btn ghost-btn-sm" data-level="0">Easy</button>
           <button class="diff-btn ghost-btn-sm active" data-level="1">Normal</button>
           <button class="diff-btn ghost-btn-sm" data-level="2">Hard</button>
         </div>
       </div>
-      <div class="speed-row">
-        <span class="set-label">SPEED</span>
+      <div class="setting-card speed-card">
+        <span class="setting-label">Speed</span>
         <input id="speedSlider" type="range" min="1" max="2" step="0.1" value="1" />
         <span class="speed-val" id="speedVal">1.00×</span>
       </div>
-      <div class="speed-row" id="bpmRow" style="display:none">
-        <span class="set-label">BPM</span>
+      <div class="setting-card theme-card">
+        <span class="setting-label">Notes</span>
+        <div class="theme-btns" id="themeBtns"></div>
+      </div>
+      <div class="setting-card bpm-card" id="bpmRow" style="display:none">
+        <span class="setting-label">BPM</span>
         <input id="bpmSlider" type="range" min="60" max="180" step="1" value="120" />
         <span class="speed-val" id="bpmVal">120 BPM</span>
         <button class="ghost-btn-sm tap-btn" id="tapBtn" title="Tap along to the beat to set tempo">TAP</button>
       </div>
-    </div>
+      <div class="import-status" id="importStatus"></div>
+    </section>
 
     <!-- scoreboard -->
-    <div class="scoreboard" id="scoreboard">
-      <div class="counter"><div class="counter-label">SCORE</div><div class="flip-digits" id="scoreDigits">0000</div></div>
-      <div class="counter"><div class="counter-label">COMBO</div><div class="flip-digits small" id="comboDigits">0</div></div>
-      <div class="counter"><div class="counter-label">ACC</div><div class="flip-digits small" id="accDigits">100%</div></div>
-      <div class="counter"><div class="counter-label">PREC</div><div class="flip-digits small" id="precisionDigits">100%</div></div>
-      <div class="counter"><div class="counter-label">MULT</div><div class="flip-digits small" id="multDigits">x1</div></div>
-    </div>
+    <section class="score-grid">
+      <div class="counter">
+        <div class="counter-label">SCORE</div>
+        <div class="metric-value" id="scoreDigits2">&nbsp;</div>
+      </div>
+      <div class="counter">
+        <div class="counter-label">COMBO</div>
+        <div class="metric-value" id="comboDigits2">&nbsp;</div>
+      </div>
+      <div class="counter">
+        <div class="counter-label">ACCURACY</div>
+        <div class="metric-value" id="accDigits2">&nbsp;</div>
+      </div>
+      <div class="counter">
+        <div class="counter-label">PRECISION</div>
+        <div class="metric-value" id="precisionDigits2">&nbsp;</div>
+      </div>
+      <div class="counter">
+        <div class="counter-label">MULTIPLIER</div>
+        <div class="metric-value" id="multDigits2">&nbsp;</div>
+      </div>
+    </section>
 
     <!-- leaderboard -->
-    <div class="leaderboard">
-      <h3>🏆 Leaderboard — <span id="lbSong">Midnight Groove</span></h3>
+    <section class="leaderboard">
+      <div class="leader-title">
+        <h3>🏆 Leaderboard — <span id="lbSong">Midnight Groove</span></h3>
+      </div>
       <div id="songBest" class="song-best">No score yet — set a record!</div>
-      <ol id="lbList"></ol>
-    </div>
+      <ol class="lb-list" id="lbList"></ol>
+    </section>
+
+    <!-- bottom nav (decorative, matches design) -->
+    <nav class="bottom-nav">
+      <div class="nav-item active"><span class="nav-ico">🏠</span>Home</div>
+      <div class="nav-item" id="navSongs"><span class="nav-ico">🎵</span>Songs</div>
+      <div class="nav-item" id="navLb"><span class="nav-ico">🏆</span>Leaderboard</div>
+      <div class="nav-item" id="navProfile"><span class="nav-ico">👤</span>Profile</div>
+    </nav>
 
     <!-- pause overlay -->
     <div class="overlay" id="pauseOverlay" hidden>
@@ -120,6 +178,8 @@
           <div class="stat"><span id="finalPrec">100%</span><label>PRECISION</label></div>
           <div class="stat"><span id="finalCombo">0</span><label>MAX COMBO</label></div>
         </div>
+        <div class="xp-gain" id="xpGain" hidden></div>
+        <div class="achieve-toasts" id="achieveToasts"></div>
         <div class="name-row">
           <input id="scoreName" type="text" maxlength="20" placeholder="Your name" />
           <button id="submitBtn" class="ghost-btn">Save</button>
@@ -129,6 +189,23 @@
           <button id="retryBtn" class="play-btn">↻ Retry</button>
           <button id="backBtn" class="ghost-btn">Menu</button>
         </div>
+      </div>
+    </div>
+
+    <!-- profile overlay -->
+    <div class="overlay" id="profileOverlay" hidden>
+      <div class="overlay-box profile-box">
+        <div class="overlay-title">YOUR PROFILE</div>
+        <div class="lv-card">
+          <div class="lv-number">LV <span id="profLv">1</span></div>
+          <div class="xp-label" id="profXpLabel">0 / 100 XP</div>
+          <div class="xp-track"><div class="xp-fill" id="profXpFill" style="width:0%"></div></div>
+        </div>
+        <div class="profile-section-title">ACHIEVEMENTS</div>
+        <div class="achieve-grid" id="profileAchievements"></div>
+        <div class="profile-section-title">SONG MASTERY</div>
+        <div class="mastery-list" id="profileMastery"></div>
+        <button class="ghost-btn" id="profileCloseBtn">Close</button>
       </div>
     </div>
 

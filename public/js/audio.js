@@ -180,6 +180,36 @@ export class AudioEngine {
     this.tone(time, freq, dur, type || 'square', vol || 0.16);
   }
 
+  // Harsh double-tone "wrong key / game over" horn, like a buzzer.
+  horn() {
+    const ctx = this.ensure();
+    const t0 = ctx.currentTime + 0.01;
+    const freqs = [300, 240];
+    for (let i = 0; i < freqs.length; i++) {
+      const t = t0 + i * 0.16;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freqs[i], t);
+      osc.frequency.linearRampToValueAtTime(freqs[i] * 0.8, t + 0.14);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      // add a little buzz on top
+      const osc2 = ctx.createOscillator();
+      const g2 = ctx.createGain();
+      osc2.type = 'square';
+      osc2.frequency.value = freqs[i] * 2;
+      g2.gain.setValueAtTime(0.0001, t);
+      g2.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+      osc.connect(g).connect(this.master);
+      osc2.connect(g2).connect(this.master);
+      osc.start(t); osc.stop(t + 0.2);
+      osc2.start(t); osc2.stop(t + 0.18);
+    }
+  }
+
   stop() {
     if (this.current) {
       this.current = null;
