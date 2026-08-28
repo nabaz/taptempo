@@ -11,52 +11,54 @@
   <div class="grain"></div>
   <div class="app" id="app">
 
-    <!-- topbar -->
+    <!-- HEADER -->
     <header class="topbar">
       <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
       <div class="brand">
-        <div class="brand-name">TAP<span>TEMPO</span></div>
-        <div class="brand-sub">a rhythm arcade · friendly competition</div>
+        <div class="logo">TAP<span>TEMPO</span></div>
+        <div class="tagline">A rhythm arcade · friendly competition</div>
       </div>
-      <button class="lv-badge" id="profileBtn" title="Your progress">LV <span id="lvNum">1</span><span class="lv-xp" id="xpBarSmall"></span></button>
+      <button class="lv-badge" id="profileBtn" title="Your progress">👤<span>LV <b id="lvNum">1</b></span></button>
     </header>
 
-    <!-- song / deck -->
+    <!-- SONG -->
     <section class="deck song-card" id="deck">
-      <button class="deck-nav" id="prevSong" aria-label="Previous song">‹</button>
       <div class="album" id="albumArt"></div>
       <div class="song-info">
         <div class="song-title" id="songTitle">Midnight Groove</div>
         <div class="song-meta" id="songGenre">Lo-fi · 92 BPM · Normal</div>
         <div class="song-meta-readout">DIFF <b id="diffNum">1</b> · <span id="bpmReadout">92 BPM</span></div>
         <div class="song-extra">
-          <span class="deck-stars" id="deckStars">☆☆☆</span>
+          <span class="stars deck-stars" id="deckStars">★ ★ ★</span>
           <span class="lock-badge" id="lockBadge" style="display:none">🔒 Locked · earn 1★ (B+) on previous</span>
         </div>
       </div>
       <div class="song-actions">
+        <button class="icon-btn" id="prevSong" title="Previous song" aria-label="Previous song">‹</button>
         <button id="importBtn" class="icon-btn" title="Import your own track (play-along)">↓</button>
-        <button id="muteBtn" class="icon-btn" title="Mute">♪</button>
+        <button id="muteBtn" class="icon-btn" title="Mute">♡</button>
         <button id="fullscreenBtn" class="icon-btn" title="Full screen">⛶</button>
+        <button class="icon-btn" id="nextSong" title="Next song" aria-label="Next song">›</button>
       </div>
-      <button class="deck-nav" id="nextSong" aria-label="Next song">›</button>
-      <input id="importInput" type="file" accept="audio/*,.mp3,audio/mpeg,audio/mp3,audio/x-m4a,.m4a,.wav,audio/wav,audio/x-wav,.ogg,audio/ogg,.aac,audio/aac,.flac,audio/flac,.aac" style="display:none" />
+      <input id="importInput" type="file" accept="audio/*,.mp3,audio/mpeg,audio/mp3,audio/x-m4a,.m4a,.wav,audio/wav,audio/x-wav,.ogg,audio/ogg,.aac,audio/aac,.flac,audio/flac" style="display:none" />
     </section>
 
-    <!-- game layout: side HUDs + playfield -->
+    <!-- GAME -->
     <section class="game-layout">
 
-      <!-- left HUD -->
-      <aside class="side-panel left">
+      <!-- LEFT HUD -->
+      <aside class="side-panel">
         <div class="side-label">SCORE</div>
         <div class="flip-digits side-score" id="scoreDigits">0000</div>
+        <div class="side-divider"></div>
         <div class="side-label">COMBO</div>
         <div class="combo-circle" id="comboDigits">0</div>
+        <div class="side-divider"></div>
         <div class="side-label">MULT</div>
         <div class="mult" id="multDigits">x1</div>
       </aside>
 
-      <!-- playfield -->
+      <!-- PLAYFIELD -->
       <main class="playfield">
         <div class="stage" id="stage">
           <canvas id="game"></canvas>
@@ -66,85 +68,91 @@
         <div class="hint" id="hint">Tap keys <b>D·F·J·K</b> (or touch) as tiles hit the line · slide long notes · <b>P</b> pause</div>
       </main>
 
-      <!-- right HUD -->
-      <aside class="side-panel right">
+      <!-- RIGHT HUD -->
+      <aside class="side-panel">
         <div class="side-label">ACC</div>
         <div class="side-stat" id="accDigits">100%</div>
+        <div class="side-divider"></div>
         <div class="side-label">PREC</div>
         <div class="side-stat" id="precisionDigits">100%</div>
+        <div class="side-panel-spacer"></div>
         <button class="icon-btn" id="pauseBtn" title="Pause">Ⅱ</button>
       </aside>
 
     </section>
 
-    <!-- controls -->
+    <!-- MAIN CONTROLS -->
     <section class="controls">
-      <button class="play-btn" id="playBtn">▶ Play</button>
-      <button class="ghost-btn" id="autoBtn">🤖 Auto-Play Demo</button>
+      <button class="play" id="playBtn">▶ &nbsp; Play</button>
+      <button class="demo" id="autoBtn">🤖 &nbsp; Auto-Play Demo</button>
     </section>
 
-    <!-- difficulty + speed + notes -->
+    <!-- SETTINGS -->
     <section class="settings">
-      <div class="setting-card diff-card">
+      <div class="setting">
         <span class="setting-label">Difficulty</span>
-        <div class="diff-btns">
-          <button class="diff-btn ghost-btn-sm" data-level="0">Easy</button>
-          <button class="diff-btn ghost-btn-sm active" data-level="1">Normal</button>
-          <button class="diff-btn ghost-btn-sm" data-level="2">Hard</button>
+        <div class="options diff-btns">
+          <button class="option diff-btn ghost-btn-sm" data-level="0">Easy</button>
+          <button class="option diff-btn ghost-btn-sm active" data-level="1">Normal</button>
+          <button class="option diff-btn ghost-btn-sm" data-level="2">Hard</button>
         </div>
       </div>
-      <div class="setting-card speed-card">
+      <div class="setting">
         <span class="setting-label">Speed</span>
-        <input id="speedSlider" type="range" min="1" max="2" step="0.1" value="1" />
-        <span class="speed-val" id="speedVal">1.00×</span>
+        <div class="speed-wrap">
+          <input id="speedSlider" type="range" min="1" max="2" step="0.1" value="1" />
+          <span class="speed-val" id="speedVal">1.00×</span>
+        </div>
       </div>
-      <div class="setting-card theme-card">
+      <div class="setting setting-wide">
         <span class="setting-label">Notes</span>
         <div class="theme-btns" id="themeBtns"></div>
       </div>
-      <div class="setting-card bpm-card" id="bpmRow" style="display:none">
+      <div class="setting setting-wide" id="bpmRow" style="display:none">
         <span class="setting-label">BPM</span>
-        <input id="bpmSlider" type="range" min="60" max="180" step="1" value="120" />
-        <span class="speed-val" id="bpmVal">120 BPM</span>
-        <button class="ghost-btn-sm tap-btn" id="tapBtn" title="Tap along to the beat to set tempo">TAP</button>
+        <div class="speed-wrap">
+          <input id="bpmSlider" type="range" min="60" max="180" step="1" value="120" />
+          <span class="speed-val" id="bpmVal">120 BPM</span>
+          <button class="ghost-btn-sm tap-btn" id="tapBtn" title="Tap along to the beat to set tempo">TAP</button>
+        </div>
       </div>
       <div class="import-status" id="importStatus"></div>
     </section>
 
-    <!-- scoreboard -->
+    <!-- SCORE -->
     <section class="score-grid">
-      <div class="counter">
-        <div class="counter-label">SCORE</div>
+      <div class="metric">
+        <div class="metric-label">SCORE</div>
         <div class="metric-value" id="scoreDigits2">&nbsp;</div>
       </div>
-      <div class="counter">
-        <div class="counter-label">COMBO</div>
+      <div class="metric">
+        <div class="metric-label">COMBO</div>
         <div class="metric-value" id="comboDigits2">&nbsp;</div>
       </div>
-      <div class="counter">
-        <div class="counter-label">ACCURACY</div>
+      <div class="metric">
+        <div class="metric-label">ACCURACY</div>
         <div class="metric-value" id="accDigits2">&nbsp;</div>
       </div>
-      <div class="counter">
-        <div class="counter-label">PRECISION</div>
+      <div class="metric">
+        <div class="metric-label">PRECISION</div>
         <div class="metric-value" id="precisionDigits2">&nbsp;</div>
       </div>
-      <div class="counter">
-        <div class="counter-label">MULTIPLIER</div>
+      <div class="metric">
+        <div class="metric-label">MULTIPLIER</div>
         <div class="metric-value" id="multDigits2">&nbsp;</div>
       </div>
     </section>
 
-    <!-- leaderboard -->
+    <!-- LEADERBOARD -->
     <section class="leaderboard">
       <div class="leader-title">
-        <h3>🏆 Leaderboard — <span id="lbSong">Midnight Groove</span></h3>
+        <h2>🏆 Leaderboard <span>— <b id="lbSong">Midnight Groove</b></span></h2>
       </div>
-      <div id="songBest" class="song-best">No score yet — set a record!</div>
+      <div class="best" id="songBest">No score yet — set a record!</div>
       <ol class="lb-list" id="lbList"></ol>
     </section>
 
-    <!-- bottom nav (decorative, matches design) -->
+    <!-- BOTTOM NAV -->
     <nav class="bottom-nav">
       <div class="nav-item active"><span class="nav-ico">🏠</span>Home</div>
       <div class="nav-item" id="navSongs"><span class="nav-ico">🎵</span>Songs</div>
@@ -156,7 +164,7 @@
     <div class="overlay" id="pauseOverlay" hidden>
       <div class="overlay-box">
         <div class="overlay-title">PAUSED</div>
-        <button class="play-btn" id="resumeBtn">Resume</button>
+        <button class="play" id="resumeBtn">Resume</button>
         <button class="ghost-btn" id="quitBtn">Quit to Menu</button>
       </div>
     </div>
@@ -165,7 +173,7 @@
     <div class="overlay" id="resultOverlay" hidden>
       <div class="overlay-box">
         <div class="overlay-rank" id="finalRank">S</div>
-        <div class="overlay-stars" id="finalStars">☆☆☆</div>
+        <div class="overlay-stars" id="finalStars">★★★</div>
         <div class="overlay-title" id="resultTitle">Song Complete!</div>
         <div class="unlock-toast" id="unlockToast" hidden>🎉 New song unlocked!</div>
         <div id="newBest" class="new-best" hidden>★ NEW RECORD ★</div>
@@ -186,7 +194,7 @@
         </div>
         <div id="submitMsg" class="submit-msg"></div>
         <div class="overlay-actions">
-          <button id="retryBtn" class="play-btn">↻ Retry</button>
+          <button id="retryBtn" class="play">↻ Retry</button>
           <button id="backBtn" class="ghost-btn">Menu</button>
         </div>
       </div>
@@ -198,7 +206,7 @@
         <div class="overlay-title">YOUR PROFILE</div>
         <div class="lv-card">
           <div class="lv-number">LV <span id="profLv">1</span></div>
-          <div class="xp-label" id="profXpLabel">0 / 100 XP</div>
+          <div class="xp-label" id="profXpLabel">0 / 200 XP</div>
           <div class="xp-track"><div class="xp-fill" id="profXpFill" style="width:0%"></div></div>
         </div>
         <div class="profile-section-title">ACHIEVEMENTS</div>
