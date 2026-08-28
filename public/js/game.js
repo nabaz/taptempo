@@ -8,19 +8,51 @@ const COLS = 4;
 
 // Note color themes (persisted so it survives reloads)
 const THEMES = {
-  classic: { name: 'Classic', colors: ['#f2a65a', '#e37b7b', '#5fbdb0', '#9d8cff'] },
-  neon:    { name: 'Neon',    colors: ['#ff6b9d', '#4dd0ff', '#b6ff4d', '#ffd740'] },
-  pastel:  { name: 'Pastel',  colors: ['#ffd3a5', '#ffc3c3', '#c1f0d8', '#c4c9ff'] },
-  mono:    { name: 'Mono',    colors: ['#e8ecf1', '#c9d2dc', '#aab6c4', '#8c9aab'] },
+  midnight: {
+    name: 'Midnight', colors: ['#f2a65a', '#e37b7b', '#5fbdb0', '#9d8cff'],
+    page: {
+      bg: '#090812', 'panel': 'rgba(20,17,32,0.82)', 'panel-2': 'rgba(27,22,43,0.9)',
+      border: 'rgba(255,255,255,0.09)', text: '#f5f1ff', muted: '#918ba8',
+      orange: '#ffad45', pink: '#ff5d7d', purple: '#9b72ff', cyan: '#57e1d0', green: '#6df0b1',
+    },
+  },
+  cyber: {
+    name: 'Cyber', colors: ['#35e0ff', '#ff4fd8', '#b6ff4d', '#9a6bff'],
+    page: {
+      bg: '#05060f', 'panel': 'rgba(14,20,46,0.82)', 'panel-2': 'rgba(21,27,58,0.9)',
+      border: 'rgba(150,190,255,0.14)', text: '#eaf6ff', muted: '#7f92c0',
+      orange: '#ffb25e', pink: '#ff4fd8', purple: '#9a6bff', cyan: '#35e0ff', green: '#b6ff4d',
+    },
+  },
+  sunrise: {
+    name: 'Sunrise', colors: ['#ffb066', '#ff6b6b', '#ffd77a', '#ff87ab'],
+    page: {
+      bg: '#150d10', 'panel': 'rgba(40,24,28,0.82)', 'panel-2': 'rgba(52,33,40,0.9)',
+      border: 'rgba(255,214,190,0.13)', text: '#fff3e8', muted: '#b99c92',
+      orange: '#ffb066', pink: '#ff87ab', purple: '#ffa94d', cyan: '#ffd77a', green: '#ffb066',
+    },
+  },
+  forest: {
+    name: 'Forest', colors: ['#4ade80', '#34d3b0', '#a3e635', '#6dd5ed'],
+    page: {
+      bg: '#08110c', 'panel': 'rgba(16,32,24,0.82)', 'panel-2': 'rgba(22,40,31,0.9)',
+      border: 'rgba(150,255,200,0.12)', text: '#eafff3', muted: '#8fb0a0',
+      orange: '#4ade80', pink: '#34d3b0', purple: '#a3e635', cyan: '#6dd5ed', green: '#4ade80',
+    },
+  },
 };
-let COLORS = THEMES.classic.colors.slice();
+let COLORS = THEMES.midnight.colors.slice();
 function applyTheme(name) {
-  const t = THEMES[name] || THEMES.classic;
+  const t = THEMES[name] || THEMES.midnight;
   COLORS = t.colors.slice();
   localStorage.setItem('mt-theme', name);
+  document.body.setAttribute('data-theme', name);
   // re-apply lane key colors
   const keys = document.querySelectorAll('.lane-key');
   for (let c = 0; c < COLS; c++) keys[c] && keys[c].style.setProperty('--k', COLORS[c]);
+  // full page palette via CSS custom properties
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(t.page || {})) root.style.setProperty('--' + k, v);
   document.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === name));
 }
 
@@ -1610,7 +1642,7 @@ el('profileOverlay').addEventListener('pointerdown', (e) => { if (e.target === e
 if (el('speedVal')) el('speedVal').textContent = speedMult.toFixed(2) + '×';
 
 // note theme picker
-const savedTheme = localStorage.getItem('mt-theme') || 'classic';
+const savedTheme = localStorage.getItem('mt-theme') || 'midnight';
 (function initThemes() {
   const host = el('themeBtns');
   if (!host) return;
@@ -1623,6 +1655,12 @@ const savedTheme = localStorage.getItem('mt-theme') || 'classic';
     b.title = THEMES[name].name;
     b.style.setProperty('--g1', THEMES[name].colors[0]);
     b.style.setProperty('--g2', THEMES[name].colors[2]);
+    const chip = document.createElement('span');
+    chip.className = 'theme-chip';
+    const lab = document.createElement('span');
+    lab.className = 'theme-label';
+    lab.textContent = THEMES[name].name;
+    b.append(chip, lab);
     b.addEventListener('click', () => applyTheme(name));
     host.appendChild(b);
   }
