@@ -144,8 +144,6 @@ body{
   transition:transform .12s,background .12s;touch-action:manipulation;cursor:pointer;
 }
 .lanes .lane-key.hit{background:var(--k);color:#0d0b16;transform:scale(1.12);}
-.lanes .lane-key.crash-wrong{background:#ff5c5c;color:#12101a;border-color:#ff5c5c;transform:scale(1.05);box-shadow:0 0 18px #ff5c5c;}
-.lanes .lane-key.crash-right{background:var(--k);color:#0d0b16;border-color:var(--k);transform:scale(1.12);box-shadow:0 0 18px var(--k);}
 .auto-badge{
   position:absolute;top:12px;right:14px;font-size:10px;letter-spacing:1.5px;
   background:rgba(255,255,255,0.08);padding:3px 9px;border-radius:6px;

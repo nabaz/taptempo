@@ -73,8 +73,6 @@ const state = {
   popups: [], // floating +/- text: { x, y, vy, life, text, color }
   clockOffset: 0,
   pauseStart: 0,
-  crash: null, // { wrongCol, rightCol, at } — set when a wrong key is hit
-  elapsedFrozen: null, // seconds — beatmap clock held still during a crash
   flash: null, // { text, color, at, big } — center milestone flash
   playerName: localStorage.getItem('mt-name') || '',
 };
@@ -255,12 +253,9 @@ export function startGame(song, auto, level = 1) {
   state.timingErrSum = 0;
   state.timingErrN = 0;
   state.clockOffset = 0;
-  state.crash = null;
-  state.elapsedFrozen = null;
   state.flash = null;
   state.particles = [];
   state.popups = [];
-  state.crashPauseStart = 0;
   state.importStartAudio = null;
   lastHUDCombo = 0;
   lastHUDMult = 1;
@@ -293,9 +288,6 @@ export function startGame(song, auto, level = 1) {
 // audio (ctx.currentTime) so tiles land exactly on the song's onsets; for the
 // built-in procedural songs we use wall-clock with pause offset.
 function gameElapsed() {
-  // While a crash is active, hold the beatmap clock perfectly still so the
-  // player can read the tiles and tap the right key to get back on track.
-  if (state.elapsedFrozen != null) return state.elapsedFrozen;
   if (isImport() && state.importStartAudio != null && audio.ctx) {
     return audio.ctx.currentTime - state.importStartAudio;
   }
@@ -307,11 +299,6 @@ function loop() {
   resizeCanvas();
   const now = performance.now();
   let e = gameElapsed();
-  if (state.crash) {
-    draw(Math.max(0.0001, e), true);
-    requestAnimationFrame(loop);
-    return;
-  }
   if (state.paused) {
     draw(Math.max(0.0001, e), true);
     requestAnimationFrame(loop);
@@ -483,7 +470,7 @@ function spawnPopup(text, col, color) {
   if (state.popups.length > 24) state.popups.shift();
 }
 
-// Briefly shake the game stage for a "hit" feel on misses / crashes.
+// Briefly shake the game stage for a "hit" feel on misses.
 let shakeUntil = 0;
 let shakeMag = 0;
 function shakeStage(mag) {
@@ -550,8 +537,6 @@ function inputToCol(clientX) {
 }
 function tap(col) {
   if (state.mode !== 'playing' || state.auto || state.paused) return;
-  // A crash is active: any tap resumes play (like Magic Tiles 3).
-  if (state.crash) { clearCrash(); return; }
   const elapsed = gameElapsed();
   if (state.hold && state.hold.col === col) return;
   let best = null, bestDiff = Infinity;
@@ -563,10 +548,8 @@ function tap(col) {
   if (best) {
     hit(best, elapsed);
     while (state.notePtr < state.notes.length && state.notes[state.notePtr].hit) state.notePtr++;
-  } else {
-    // Wrong key: no tile in this lane to hit right now — crash.
-    triggerCrash(col);
   }
+  // A tap with no tile in range is simply ignored — no penalty, no freeze.
 }
 function releaseCol(col) {
   if (state.mode !== 'playing') return;
@@ -577,65 +560,9 @@ function releaseCol(col) {
   }
 }
 
-function nearestUpcomingNote() {
-  const elapsed = gameElapsed();
-  let best = null, bestT = Infinity;
-  for (const note of state.remainingNotes) {
-    const t = noteGameTime(note);
-    if (t >= elapsed - 0.05 && t < bestT) { best = note; bestT = t; }
-  }
-  return best;
-}
-
-function triggerCrash(wrongCol) {
-  state.crash = { wrongCol, rightCol: -1, at: performance.now() };
-  const next = nearestUpcomingNote();
-  if (next) state.crash.rightCol = next.col;
-  // Freeze the beatmap at this instant so NO tiles move while the player is
-  // recovering — otherwise it's impossible to get back on track.
-  state.crashPauseStart = performance.now();
-  state.elapsedFrozen = gameElapsed();
-  audio.pause();
-  audio.horn();
-  updateLaneKeys(true);
-  flashCrash(wrongCol, state.crash.rightCol);
-  shakeStage(14);
-}
-
-function clearCrash() {
-  if (!state.crash) return;
-  state.crash = null;
-  // Account for the wall-clock time spent frozen so the clock is seamless.
-  if (state.crashPauseStart) {
-    state.clockOffset += performance.now() - state.crashPauseStart;
-    state.crashPauseStart = 0;
-  }
-  state.elapsedFrozen = null;
-  audio.ensure();
-  audio.resume();
-  updateLaneKeys(true);
-  document.querySelectorAll('.lane-key').forEach((k) => {
-    k.classList.remove('crash-wrong', 'crash-right');
-  });
-}
-
-// Highlight a lane key as wrong (red pulse) or as the correct one (accent flash).
-function flashCrash(wrongCol, rightCol) {
-  const keys = document.querySelectorAll('.lane-key');
-  if (keys[wrongCol]) {
-    keys[wrongCol].classList.add('crash-wrong');
-    setTimeout(() => keys[wrongCol] && keys[wrongCol].classList.remove('crash-wrong'), 600);
-  }
-  if (rightCol >= 0 && keys[rightCol]) {
-    keys[rightCol].classList.add('crash-right');
-    setTimeout(() => keys[rightCol] && keys[rightCol].classList.remove('crash-right'), 900);
-  }
-}
-
 canvas.addEventListener('pointerdown', (e) => tap(inputToCol(e.clientX)));
 canvas.addEventListener('pointerup', (e) => releaseCol(inputToCol(e.clientX)));
 window.addEventListener('keydown', (e) => {
-  if (state.mode === 'playing' && state.crash) { clearCrash(); return; }
   const map = { D: 0, F: 1, J: 2, K: 3 };
   const k = e.key.toUpperCase();
   if (k in map) tap(map[k]);
@@ -873,8 +800,8 @@ function draw(elapsed, paused) {
 
   // particles
   if (state.particles.length) {
-    const dt = nowT - (state.lastFrame || nowT);
-    state.lastFrame = nowT;
+    const dt = nowT - (state.particleLast == null ? nowT : state.particleLast);
+    state.particleLast = nowT;
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const p = state.particles[i];
       p.life -= dt;
@@ -893,11 +820,14 @@ function draw(elapsed, paused) {
       }
       ctx.globalAlpha = 1;
     }
+  } else {
+    state.particleLast = null;
   }
 
   // floating score popups
   if (state.popups.length) {
-    const dt = nowT - (state.lastFrame || nowT);
+    const dt = nowT - (state.popupLast == null ? nowT : state.popupLast);
+    state.popupLast = nowT;
     ctx.textAlign = 'center';
     for (let i = state.popups.length - 1; i >= 0; i--) {
       const p = state.popups[i];
@@ -915,6 +845,8 @@ function draw(elapsed, paused) {
     }
     ctx.globalAlpha = 1;
     ctx.textAlign = 'left';
+  } else {
+    state.popupLast = null;
   }
 
   // judge pop
@@ -970,7 +902,7 @@ function draw(elapsed, paused) {
   }
 
   // perfect-chain counter (top center)
-  if (state.perfectChain > 1 && !state.crash) {
+  if (state.perfectChain > 1) {
     ctx.textAlign = 'center';
     ctx.globalAlpha = Math.min(1, 0.35 + state.perfectChain * 0.02);
     ctx.font = 'bold 13px -apple-system, sans-serif';
@@ -987,34 +919,6 @@ function draw(elapsed, paused) {
     // dim only; the actual pause overlay is DOM
     ctx.fillStyle = 'rgba(13,11,22,0.4)';
     ctx.fillRect(0, 0, W, H);
-  }
-
-  if (state.crash) {
-    // Red-tinted screen with a "WRONG KEY" flash and a prompt to continue.
-    const age = (performance.now() - state.crash.at) / 1000;
-    ctx.fillStyle = 'rgba(190,40,40,0.18)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ff6b6b';
-    ctx.font = 'bold 30px -apple-system, sans-serif';
-    ctx.fillText('WRONG KEY', W / 2, H * 0.3);
-    ctx.font = '15px -apple-system, sans-serif';
-    ctx.fillStyle = 'rgba(245,239,230,0.85)';
-    ctx.fillText('tap any key to continue', W / 2, H * 0.3 + 30);
-    ctx.textAlign = 'left';
-    if (state.crash.rightCol >= 0) {
-      // draw a subtle pointer to the correct lane
-      ctx.fillStyle = COLORS[state.crash.rightCol];
-      ctx.globalAlpha = 0.9;
-      const hx = state.crash.rightCol * laneW() + laneW() / 2;
-      ctx.beginPath();
-      ctx.moveTo(hx, hy + 10);
-      ctx.lineTo(hx - 12, hy - 6);
-      ctx.lineTo(hx + 12, hy - 6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
   }
 }
 
