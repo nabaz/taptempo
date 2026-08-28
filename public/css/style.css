@@ -338,5 +338,9 @@ input[type="range"]{accent-color:var(--orange);height:4px;}
   .score-grid{grid-template-columns:repeat(3,1fr);}
   .metric:nth-child(4),.metric:nth-child(5){display:none;}
   .logo{font-size:24px;}
-  .song-card{padding:12px;}
+  .song-card{flex-wrap:wrap;gap:10px;padding:12px;}
+  .song-card .song-info{flex:1 1 100%;order:2;}
+  .song-card .song-actions{flex:1 1 100%;order:3;justify-content:flex-start;}
+  .song-card .album{order:1;width:56px;height:56px;flex-basis:56px;}
+  .song-card .song-extra{flex-wrap:wrap;}
 }
