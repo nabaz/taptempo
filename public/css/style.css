@@ -12,8 +12,8 @@
   --key2:#5fbdb0;
   --key3:#9d8cff;
 }
-*{box-sizing:border-box;}
-html,body{margin:0;padding:0;background:var(--bg);}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;background:var(--bg);overscroll-behavior:none;}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   color:var(--text);
@@ -47,7 +47,7 @@ body{
 .deck-arrow{
   background:var(--panel);border:1px solid var(--line);color:var(--text);
   width:38px;height:38px;border-radius:8px;font-size:18px;cursor:pointer;
-  flex-shrink:0;transition:border-color .15s;
+  flex-shrink:0;transition:border-color .15s;touch-action:manipulation;
 }
 .deck-arrow:hover{border-color:var(--song-accent);}
 .deck-arrow:disabled{opacity:0.3;cursor:not-allowed;}
@@ -81,6 +81,7 @@ body{
 .icon-btn{
   background:var(--panel);border:1px solid var(--line);color:var(--text);
   width:38px;height:38px;border-radius:8px;font-size:16px;cursor:pointer;
+  touch-action:manipulation;
 }
 .icon-btn:hover{border-color:var(--song-accent);}
 
@@ -95,6 +96,7 @@ body{
   height:38px;margin:0 5px;border-radius:9px;display:flex;align-items:center;justify-content:center;
   font-weight:800;font-size:15px;border:2px solid var(--k);color:var(--k);
   background:rgba(255,255,255,0.02);transition:transform .06s,background .06s;
+  touch-action:manipulation;cursor:pointer;
 }
 .lanes .lane-key.hit{background:var(--k);color:#0d0b16;transform:scale(1.12);}
 .auto-badge{
@@ -109,6 +111,7 @@ body{
 .play-btn,.ghost-btn{
   flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;
   cursor:pointer;letter-spacing:0.5px;border:1px solid var(--line);
+  touch-action:manipulation;
 }
 .play-btn{background:var(--song-accent);color:#12101a;border:none;}
 .ghost-btn{background:transparent;color:var(--text-dim);}
@@ -193,6 +196,7 @@ body{
 .ghost-btn-sm{
   flex:1;padding:6px 4px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;
   background:transparent;color:var(--text-dim);border:1px solid var(--line);
+  touch-action:manipulation;
 }
 .ghost-btn-sm.active{color:var(--song-accent);border-color:var(--song-accent);background:rgba(255,255,255,0.03);}
 .speed-row input{flex:1;}

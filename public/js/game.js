@@ -22,7 +22,7 @@ const el = (id) => document.getElementById(id);
 // persisted settings
 let speedMult = clamp(parseFloat(localStorage.getItem('mt-speed') || '1'), 1, 2);
 
-function speed() { return (canvas.height / (window.devicePixelRatio || 1)) * 0.62 * speedMult; }
+function speed() { return (canvas.height / getDPR()) * 0.62 * speedMult; }
 
 const state = {
   mode: 'menu', // menu | playing | done
@@ -146,12 +146,14 @@ function buildImportChart(analysis, bpm, level, holdFloor = 0.45) {
 window.buildImportChart = buildImportChart;
 
 // ---------- canvas sizing ----------
+function getDPR() { return Math.min(window.devicePixelRatio || 1, 2); }
+
 function resizeCanvas() {
   const stage = el('stage');
   if (!stage) return;
   const w = stage.clientWidth;
-  const h = 420;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const h = stage.clientHeight || 420;
+  const dpr = getDPR();
   canvas.width = w * dpr;
   canvas.height = h * dpr;
   canvas.style.width = w + 'px';
@@ -192,6 +194,10 @@ function applyAccent(song) {
 // ---------- game flow ----------
 export function startGame(song, auto, level = 1) {
   audio.ensure();
+  // Force-resume AudioContext on iOS — it can re-suspend after idle
+  if (audio.ctx && audio.ctx.state === 'suspended') {
+    audio.ctx.resume();
+  }
   state.song = song;
   state.level = level;
   state.mode = 'playing';
@@ -392,7 +398,7 @@ function setJudge(label, ms) {
 }
 
 function spawnBurst(col, big) {
-  const w = canvas.width / (window.devicePixelRatio || 1) / COLS;
+  const w = canvas.width / getDPR() / COLS;
   const x = col * w + w / 2;
   const y = hitY();
   const n = big ? 20 : 11;
@@ -440,21 +446,25 @@ canvas.addEventListener('pointerdown', (e) => tap(inputToCol(e.clientX)));
 canvas.addEventListener('pointerup', (e) => releaseCol(inputToCol(e.clientX)));
 window.addEventListener('keydown', (e) => {
   const map = { D: 0, F: 1, J: 2, K: 3 };
-  if (e.key in map) tap(map[e.key]);
+  const k = e.key.toUpperCase();
+  if (k in map) tap(map[k]);
 });
 window.addEventListener('keyup', (e) => {
   const map = { D: 0, F: 1, J: 2, K: 3 };
-  if (e.key in map) releaseCol(map[e.key]);
+  const k = e.key.toUpperCase();
+  if (k in map) releaseCol(map[k]);
 });
 
 // ---- lock screen zoom (iOS pinch, Safari gestures, double-tap) ----
 // iOS Safari uses the older gesture* events for pinch; modern browsers fire
 // a multi-touch touchmove. Block both so the game surface never zooms, while
 // still allowing single-finger play taps and single-finger menu scrolling.
-document.addEventListener('gesturestart', (e) => e.preventDefault());
-document.addEventListener('gesturechange', (e) => e.preventDefault());
+document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', (e) => {
-  if (e.touches && e.touches.length > 1) e.preventDefault();
+  // Only block multi-touch pinches on the game stage, not site-wide scrolling
+  if (e.target.closest('.stage') && e.touches && e.touches.length > 1) e.preventDefault();
 }, { passive: false });
 
 // ---------- HUD ----------
@@ -484,8 +494,8 @@ function updateLaneKeys(clear) {
 }
 
 // ---------- drawing ----------
-function hitY() { return (canvas.height / (window.devicePixelRatio || 1)) * 0.62; }
-function laneW() { return canvas.width / (window.devicePixelRatio || 1) / COLS; }
+function hitY() { return (canvas.height / getDPR()) * 0.62; }
+function laneW() { return canvas.width / getDPR() / COLS; }
 
 function pillRect(x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -534,8 +544,8 @@ function shade(hex, amt) {
 }
 
 function draw(elapsed, paused) {
-  const W = canvas.width / (window.devicePixelRatio || 1);
-  const H = canvas.height / (window.devicePixelRatio || 1);
+  const W = canvas.width / getDPR();
+  const H = canvas.height / getDPR();
   ctx.clearRect(0, 0, W, H);
 
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -1093,4 +1103,25 @@ setLevel(1);
 renderSong();
 if (el('speedVal')) el('speedVal').textContent = speedMult.toFixed(2) + '×';
 audio.ensure();
+
+// iOS requires a user gesture to unlock AudioContext.  We listen on both
+// pointer and touch events (iOS Safari only fires touchstart reliably) and
+// resume + play a silent buffer to fully unlock playback.
+let audioUnlocked = false;
+function unlockAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  try {
+    const ctx = audio.ensure();
+    if (ctx.state === 'suspended') ctx.resume();
+    // iOS also needs an actual source to be started from a gesture
+    const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (e) {}
+}
+window.addEventListener('pointerdown', unlockAudio, { once: true });
+window.addEventListener('touchstart', unlockAudio, { once: true });
 updateHUD(true);
