@@ -151,16 +151,26 @@ function getDPR() { return Math.min(window.devicePixelRatio || 1, 2); }
 function resizeCanvas() {
   const stage = el('stage');
   if (!stage) return;
-  const w = stage.clientWidth;
-  const h = stage.clientHeight || 420;
+  // Use the stage's border-box so the canvas fills it exactly with no gap.
+  const rect = stage.getBoundingClientRect();
+  const w = Math.max(1, rect.width);
+  const h = Math.max(1, rect.height);
   const dpr = getDPR();
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
+  const bw = Math.round(w * dpr);
+  const bh = Math.round(h * dpr);
+  if (canvas.width === bw && canvas.height === bh) return;
+  canvas.width = bw;
+  canvas.height = bh;
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 0));
+window.addEventListener('pageshow', resizeCanvas);
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(resizeCanvas).observe(el('stage'));
+}
 
 // ---------- accent color ----------
 const LANE_KEYS = ['D', 'F', 'J', 'K'];
@@ -253,6 +263,7 @@ function gameElapsed() {
 
 function loop() {
   if (state.mode !== 'playing') return;
+  resizeCanvas();
   const now = performance.now();
   if (state.paused) {
     const e = gameElapsed();
